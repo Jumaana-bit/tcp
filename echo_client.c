@@ -4,10 +4,17 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 
-#define PORT 12345
 #define BUFFER_SIZE 1024
 
-int main() {
+int main(int argc, char *argv[]) {
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <server_IP_address> <port_number>\n", argv[0]);
+        exit(EXIT_FAILURE);
+    }
+
+    char *server_ip = argv[1];
+    int port = atoi(argv[2]);
+
     struct sockaddr_in serv_addr;
     int sock = 0, valread;
     char buffer[BUFFER_SIZE] = {0};
@@ -19,10 +26,10 @@ int main() {
     }
     
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT);
+    serv_addr.sin_port = htons(port);
     
     // Convert IPv4 and IPv6 addresses from text to binary form
-    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
+    if (inet_pton(AF_INET, server_ip, &serv_addr.sin_addr) <= 0) {
         perror("invalid address / address not supported");
         return -1;
     }
