@@ -7,7 +7,12 @@
 #define PORT 12345
 #define BUFFER_SIZE 1024
 
-int main() {
+int main(int argc, char *argv[]) {
+    if (argc != 2) {
+        fprintf(stderr, "Usage: %s <server_ip>\n", argv[0]);
+        return -1;
+    }
+    
     int sock, valread;
     struct sockaddr_in server;
     char buffer[BUFFER_SIZE] = {0};
@@ -21,8 +26,8 @@ int main() {
     server.sin_family = AF_INET;
     server.sin_port = htons(PORT);
     
-    // Convert IPv4 and IPv6 addresses from text to binary form
-    if (inet_pton(AF_INET, "127.0.0.1", &server.sin_addr) <= 0) {
+    // Convert server IP address from text to binary form
+    if (inet_pton(AF_INET, argv[1], &server.sin_addr) <= 0) {
         perror("invalid address / address not supported");
         return -1;
     }
