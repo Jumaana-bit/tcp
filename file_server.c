@@ -1,79 +1,76 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <unistd.h>
-#include <arpa/inet.h>
 
-#define PORT 12345
-#define MAX_PACKET_SIZE 100
-#define FILE_NOT_FOUND "ERROR: File not found."
-
-void send_file(FILE *fp, int client_socket) {
-    char buffer[MAX_PACKET_SIZE];
-    size_t bytes_read;
-
-    // Read file in chunks and send to client
-    while ((bytes_read = fread(buffer, 1, MAX_PACKET_SIZE, fp)) > 0) {
-        send(client_socket, buffer, bytes_read, 0);
-    }
-}
+#define SERVER_TCP_PORT 3000 /* well-known port */
+#define BUFLEN 100 /* buffer length */
 
 int main() {
-    int server_fd, client_socket;
-    struct sockaddr_in address;
-    int opt = 1;
-    int addrlen = sizeof(address);
-    char filename[100];
-    FILE *file;
+    int sd, new_sd, client_len;
+    struct sockaddr_in server, client;
+    FILE *file_ptr;
+    char buffer[BUFLEN];
 
-    // Creating socket file descriptor
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-        perror("socket failed");
-        exit(EXIT_FAILURE);
+    /* Create a stream socket */
+    if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        perror("Can't create a socket");
+        exit(1);
     }
 
-    //attaching socket to the port 12345
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) {
-        perror("setsockopt");
-        exit(EXIT_FAILURE);
-    }
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY;
-    address.sin_port = htons(PORT);
-
-    // Forcefully attaching socket to the port 12345
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        perror("bind failed");
-        exit(EXIT_FAILURE);
-    }
-    if (listen(server_fd, 3) < 0) {
-        perror("listen");
-        exit(EXIT_FAILURE);
+    /* Bind an address to the socket */
+    bzero((char *)&server, sizeof(struct sockaddr_in));
+    server.sin_family = AF_INET;
+    server.sin_port = htons(SERVER_TCP_PORT);
+    server.sin_addr.s_addr = htonl(INADDR_ANY);
+    if (bind(sd, (struct sockaddr *)&server, sizeof(server)) == -1) {
+        perror("Can't bind name to socket");
+        exit(1);
     }
 
-    // Accept connection from client
-    if ((client_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
-        perror("accept");
-        exit(EXIT_FAILURE);
+    /* Listen for incoming connections */
+    listen(sd, 5);
+
+    while (1) {
+        /* Accept incoming connection */
+        client_len = sizeof(client);
+        new_sd = accept(sd, (struct sockaddr *)&client, &client_len);
+        if (new_sd < 0) {
+            perror("Can't accept client");
+            exit(1);
+        }
+
+        /* Receive filename from client */
+        if (recv(new_sd, buffer, BUFLEN, 0) < 0) {
+            perror("Can't receive filename");
+            close(new_sd);
+            continue;
+        }
+
+        /* Open requested file */
+        if ((file_ptr = fopen(buffer, "rb")) == NULL) {
+            perror("Can't open file");
+            /* Send error message to client */
+            strcpy(buffer, "Error: File not found or cannot be opened");
+            send(new_sd, buffer, strlen(buffer), 0);
+            close(new_sd);
+            continue;
+        }
+
+        /* Send file data to client */
+        while (!feof(file_ptr)) {
+            int bytes_read = fread(buffer, 1, BUFLEN, file_ptr);
+            send(new_sd, buffer, bytes_read, 0);
+        }
+
+        fclose(file_ptr);
+        close(new_sd);
     }
 
-    // Receive filename from client
-    if (recv(client_socket, filename, sizeof(filename), 0) <= 0) {
-        perror("recv");
-        exit(EXIT_FAILURE);
-    }
+    close(sd);
 
-    // Open file
-    if ((file = fopen(filename, "rb")) == NULL) {
-        send(client_socket, FILE_NOT_FOUND, strlen(FILE_NOT_FOUND), 0);
-    } else {
-        // Send file to client
-        send_file(file, client_socket);
-        fclose(file);
-    }
-
-    // Close connection
-    close(client_socket);
-    close(server_fd);
     return 0;
 }
