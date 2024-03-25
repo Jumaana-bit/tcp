@@ -50,7 +50,8 @@ int main(int argc, char *argv[]) {
     }
 
     /* Open local file for writing */
-    if ((file_ptr = fopen("downloaded_file", "wb")) == NULL) {
+    char *filename = argv[2];
+    if ((file_ptr = fopen(filename, "wb")) == NULL) {
         perror("Can't open local file for writing");
         close(sd);
         exit(1);
