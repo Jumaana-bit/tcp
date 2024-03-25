@@ -1,71 +1,72 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 
-#define PORT 12345
-#define MAX_PACKET_SIZE 100
-
-void receive_file(int server_socket, FILE *fp) {
-    char buffer[MAX_PACKET_SIZE];
-    int bytes_received;
-
-    // Receive file data from server and write to file
-    while ((bytes_received = recv(server_socket, buffer, sizeof(buffer), 0)) > 0) {
-        fwrite(buffer, 1, bytes_received, fp);
-    }
-}
+#define SERVER_TCP_PORT 3000 /* well-known port */
+#define BUFLEN 100 /* buffer length */
 
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <server_ip>\n", argv[0]);
-        exit(EXIT_FAILURE);
+    int sd, port;
+    struct sockaddr_in server;
+    FILE *file_ptr;
+    char buffer[BUFLEN];
+
+    if (argc != 3) {
+        fprintf(stderr, "Usage: %s <server_ip> <filename>\n", argv[0]);
+        exit(1);
     }
 
-    int server_socket;
-    struct sockaddr_in server_address;
-    char filename[100];
-    FILE *file;
-
-    // Create socket
-    if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-        perror("socket creation error");
-        exit(EXIT_FAILURE);
+    /* Create a stream socket */
+    if ((sd = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        perror("Can't create a socket");
+        exit(1);
     }
 
-    // Initialize server address
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(PORT);
-    if (inet_pton(AF_INET, argv[1], &server_address.sin_addr) <= 0) {
-        perror("invalid address / address not supported");
-        exit(EXIT_FAILURE);
+    /* Specify server address */
+    bzero((char *)&server, sizeof(struct sockaddr_in));
+    server.sin_family = AF_INET;
+    server.sin_port = htons(SERVER_TCP_PORT);
+    if (inet_pton(AF_INET, argv[1], &server.sin_addr) <= 0) {
+        perror("Invalid address / Address not supported");
+        exit(1);
     }
 
-    // Connect to server
-    if (connect(server_socket, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
-        perror("connection failed");
-        exit(EXIT_FAILURE);
+    /* Connect to the server */
+    if (connect(sd, (struct sockaddr *)&server, sizeof(server)) == -1) {
+        perror("Can't connect");
+        exit(1);
     }
 
-    // Get filename from user
-    printf("Enter filename: ");
-    scanf("%s", filename);
-
-    // Send filename to server
-    send(server_socket, filename, strlen(filename), 0);
-
-    // Open file for writing
-    if ((file = fopen(filename, "wb")) == NULL) {
-        perror("file open error");
-        exit(EXIT_FAILURE);
+    /* Send filename to server */
+    if (send(sd, argv[2], strlen(argv[2]), 0) < 0) {
+        perror("Can't send filename");
+        close(sd);
+        exit(1);
     }
 
-    // Receive file from server
-    receive_file(server_socket, file);
+    /* Open local file for writing */
+    if ((file_ptr = fopen("downloaded_file", "wb")) == NULL) {
+        perror("Can't open local file for writing");
+        close(sd);
+        exit(1);
+    }
 
-    // Close connection and file
-    fclose(file);
-    close(server_socket);
+    /* Receive file data from server */
+    while (1) {
+        int bytes_received = recv(sd, buffer, BUFLEN, 0);
+        if (bytes_received <= 0) {
+            break; // End of transmission
+        }
+        fwrite(buffer, 1, bytes_received, file_ptr);
+    }
+
+    fclose(file_ptr);
+    close(sd);
+
     return 0;
 }
